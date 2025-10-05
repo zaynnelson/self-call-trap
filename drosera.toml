@@ -7,7 +7,7 @@ drosera_address = "0x91cB447BaFc6e0EA0F4Fe056F5a9b1F14bb06e5D"
 
 [traps.mytrap]
 path = "out/SelfCallTrap.sol/SelfCallTrap.json"
-response_contract = "0xeAE9b2C41fB6b91ABBF87453e696572A29072F82"
+response_contract = "0x5bc69dAB2Fdf7b60F564A15a43C24533D94A536b"
 response_function = "response(bytes)"
 cooldown_period_blocks = 33
 min_number_of_operators = 1
