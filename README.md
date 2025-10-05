@@ -1,119 +1,117 @@
-# SelfCallTrap
+# 🧠 SelfCall Trap — Drosera Network
 
-A Solidity smart contract trap designed to detect and respond to self-call transactions - scenarios where a contract or address calls itself with calldata.
+This repository implements a **Drosera-compatible Trap/Responder pair** designed to detect and respond to **self-call patterns** — when a contract invokes itself (i.e., `from == to`) with non-empty calldata.
+This behavior often indicates automated proxy initialization, recursive logic bugs, or potential malicious dusting-style self-executions.
 
-## Overview
+---
 
-SelfCallTrap is an implementation of the ITrap interface from the Drosera contracts framework. It monitors blockchain transactions to identify potentially suspicious self-call patterns that could indicate malicious activity or exploitation attempts.
+## 📘 Overview
 
-## Contract Details
+The **SelfCallTrap** system is composed of three on-chain components:
 
-- **License**: MIT
-- **Solidity Version**: ^0.8.20
-- **Interface**: ITrap (from drosera-contracts)
+1. **`SelfCallRegistry.sol`** — Keeps track of self-call events detected off-chain.
+2. **`SelfCallTrap.sol`** — A Drosera Trap that queries the registry and determines if an alert should be raised.
+3. **`SelfCallResponseTrap.sol`** — A simple responder that logs detections and emits on-chain alerts.
 
-## Use Cases
+---
 
-### 1. **Reentrancy Attack Detection**
-Detects contracts that call themselves recursively, which is a common pattern in reentrancy attacks where malicious contracts exploit state inconsistencies.
+## 🏗️ Architecture
 
-**Example Scenario**: A DeFi protocol being exploited through recursive calls to withdraw functions before balance updates are finalized.
-
-### 2. **Smart Contract Security Monitoring**
-Monitors for unusual self-referential behavior that could indicate:
-- Contract upgrades gone wrong
-- Proxy contract misconfigurations  
-- Malicious contract deployments
-
-### 3. **DeFi Protocol Protection**
-Protects decentralized finance applications by flagging:
-- Flash loan attack patterns
-- Arbitrage bot exploits
-- Price manipulation attempts through self-calls
-
-### 4. **Automated Incident Response**
-Triggers automated responses when suspicious self-call patterns are detected:
-- Circuit breakers activation
-- Transaction blocking
-- Alert notifications to security teams
-
-### 5. **Compliance and Auditing**
-Provides audit trails for:
-- Regulatory compliance monitoring
-- Post-incident analysis
-- Smart contract behavior verification
-
-### 6. **MEV (Maximal Extractable Value) Detection**
-Identifies sophisticated MEV strategies that use self-calls to:
-- Manipulate transaction ordering
-- Extract value from other users' transactions
-- Execute complex arbitrage strategies
-
-## How It Works
-
-### Data Collection
-The `collect()` function returns the deployer's wallet address for identification purposes.
-
-### Detection Logic
-The `shouldRespond()` function analyzes transaction data to determine if a response is needed:
-
-1. **Input Validation**: Ensures minimum required data elements (from/to addresses)
-2. **Address Extraction**: Decodes sender and receiver addresses from transaction data
-3. **Self-Call Detection**: Identifies when `fromAddress == toAddress` (excluding zero address)
-4. **Calldata Analysis**: Checks if the transaction contains calldata (indicating function execution)
-5. **Response Decision**: Triggers when both self-call and calldata conditions are met
-
-### Response Conditions
-
-**Triggers Response When**:
-- Transaction sender equals receiver (self-call)
-- Transaction contains calldata (function execution)
-- Both addresses are non-zero
-
-**No Response When**:
-- Different sender/receiver addresses
-- No calldata present
-- Invalid data format
-- Zero addresses involved
-
-## Integration Examples
-
-### Security Monitoring System
-```solidity
-// Deploy trap in monitoring infrastructure
-SelfCallTrap trap = new SelfCallTrap();
-
-// Monitor transactions
-bytes[] memory txData = [senderBytes, receiverBytes, calldataLengthBytes];
-(bool shouldAlert, bytes memory reason) = trap.shouldRespond(txData);
-
-if (shouldAlert) {
-    // Trigger security response
-    handleSecurityAlert(reason);
-}
+```
++-------------------+
+|  Off-chain Script |
+|  (Detector)       |
+|-------------------|
+| Watches mempool   |
+| or tx history     |
+| Detects self-call |
+| Encodes ID        |
+| Calls registry.flag() |
++---------+---------+
+          |
+          v
++-------------------+
+| SelfCallRegistry  |
+|-------------------|
+| Stores flagged ID |
+| Emits event       |
++---------+---------+
+          |
+          v
++-------------------+
+| SelfCallTrap      |
+|-------------------|
+| Queries registry  |
+| via .flagged(id)  |
+| If true → responds|
++---------+---------+
+          |
+          v
++-------------------+
+| SelfCallResponse  |
+|-------------------|
+| Logs alert        |
+| Emits event       |
++-------------------+
 ```
 
-### DeFi Protocol Integration
+---
+
+## ⚙️ Smart Contracts
+
+### `SelfCallRegistry.sol`
+
+Stores self-call detection results flagged by the off-chain detector.
+Each detection generates a unique `id` based on:
+
 ```solidity
-// Use in protocol's security layer
-modifier checkSelfCall() {
-    bytes[] memory currentTxData = getCurrentTransactionData();
-    (bool isSuspicious, ) = selfCallTrap.shouldRespond(currentTxData);
-    require(!isSuspicious, "Suspicious self-call detected");
-    _;
-}
+keccak256(abi.encode(wallet, calldataLength, blockNumber))
 ```
 
-## Error Handling
+### `SelfCallTrap.sol`
 
-The contract provides descriptive error messages for various failure scenarios:
-- `"Need at least 2 elements: from and to addresses"`
-- `"Invalid fromAddress data length"`
-- `"Invalid toAddress data length"`
+Queries the registry and decides whether to trigger a Drosera response.
+The ID must match the one flagged off-chain:
 
-## Security Considerations
+```solidity
+bytes32 id = keccak256(abi.encode(msg.sender, msg.data.length, block.number));
+```
 
-1. **False Positives**: Legitimate contracts may perform self-calls for valid reasons (upgrades, internal state management)
-2. **Data Validation**: Always validates input data format and length before processing
-3. **Gas Efficiency**: Uses view functions where possible to minimize gas costs
-4. **Access Control**: Constructor sets deployer as the identified wallet for tracking
+### `SelfCallResponseTrap.sol`
+
+Receives Drosera Executor callbacks, records the detection on-chain, and emits `SelfCallHandled`.
+
+---
+
+## 🔍 Off-Chain Detector (Example Flow)
+
+The off-chain detector script should:
+
+1. Monitor transactions (via RPC or mempool).
+2. Identify transactions where `tx.from == tx.to`.
+3. Check that `tx.input.length > 0`.
+4. Compute the detection ID:
+
+   ```js
+   const id = keccak256(abi.encode(from, calldataLen, blockNumber))
+   ```
+5. Call `SelfCallRegistry.flag(wallet, calldataLen, blockNumber)`.
+
+Once flagged, the Trap will detect it on-chain and signal the responder.
+
+---
+
+## 🧩 Example Use Cases
+
+* Detect **recursive or accidental contract self-calls**
+* Monitor **proxy or factory patterns** making self-invocations
+* Identify **potential dusting or bait behavior** from on-chain automation
+
+---
+
+## 🚀 Deployment Order
+
+1. Deploy `SelfCallRegistry.sol`
+2. Deploy `SelfCallTrap.sol`, update the `REGISTRY` constant address.
+3. Deploy `SelfCallResponseTrap.sol`
+4. Register both Trap and Responder in Drosera Network.
