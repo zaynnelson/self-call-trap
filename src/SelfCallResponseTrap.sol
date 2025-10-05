@@ -3,35 +3,30 @@ pragma solidity ^0.8.20;
 
 contract SelfCallResponseTrap {
     struct DetectionLog {
-        string alertType;
-        address suspiciousWallet;
+        bytes32 lastId;
+        uint256 blockNumber;
         uint256 timestamp;
-        string description;
         bool isActive;
     }
-    
+
     DetectionLog public detection;
-    address private owner;
-    
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner can call");
-        _;
-    }
-    
-    constructor() {
-        owner = msg.sender;
-    }
-    
-    function response(bytes memory responseData) external onlyOwner {
-        (string memory alertType, address suspiciousAddr) = 
-            abi.decode(responseData, (string, address));
-        
+
+    event SelfCallHandled(
+        bytes32 lastId,
+        uint256 blockNumber,
+        uint256 timestamp
+    );
+
+    function response(bytes memory responseData) external {
+        bytes32 lastId = abi.decode(responseData, (bytes32));
+
         detection = DetectionLog({
-            alertType: alertType,
-            suspiciousWallet: suspiciousAddr,
+            lastId: lastId,
+            blockNumber: block.number,
             timestamp: block.timestamp,
-            description: "Self-call detected with calldata",
             isActive: true
         });
+
+        emit SelfCallHandled(lastId, block.number, block.timestamp);
     }
 }
