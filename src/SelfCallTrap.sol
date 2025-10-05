@@ -3,49 +3,49 @@ pragma solidity ^0.8.20;
 
 import {ITrap} from "drosera-contracts/interfaces/ITrap.sol";
 
+interface ISelfCallRegistry {
+    function flagged(bytes32 id) external view returns (bool);
+}
+
 contract SelfCallTrap is ITrap {
-    address private myWallet;
-    
-    constructor() {
-        myWallet = msg.sender;
+    address public constant REGISTRY = 0x0000000000000000000000000000000000000000;
+
+    struct CollectOutput {
+        uint256 blockNumber;
+        bytes32 lastId;
+        bool isFlagged;
     }
-    
-    function collect() external view returns (bytes memory) {
-        return abi.encode(myWallet);
+
+    function collect() external view override returns (bytes memory) {
+        bytes32 id = keccak256(
+            abi.encode(msg.sender, msg.data.length, block.number)
+        );
+
+        bool f = ISelfCallRegistry(REGISTRY).flagged(id);
+
+        return abi.encode(
+            CollectOutput({
+                blockNumber: block.number,
+                lastId: id,
+                isFlagged: f
+            })
+        );
     }
-    
-    function shouldRespond(bytes[] calldata data) external pure returns (bool, bytes memory) {
-        if (data.length < 2) {
-            return (false, abi.encode("Need at least 2 elements: from and to addresses"));
-        }
-        
-        address fromAddress;
-        address toAddress;
-        uint256 calldataLength;
-        
-        if (data[0].length == 32) {
-            fromAddress = abi.decode(data[0], (address));
-        } else {
-            return (false, abi.encode("Invalid `fromAddress` data length"));
+
+    function shouldRespond(bytes[] calldata data)
+        external
+        pure
+        override
+        returns (bool, bytes memory)
+    {
+        if (data.length == 0) return (false, "");
+
+        CollectOutput memory sample = abi.decode(data[0], (CollectOutput));
+
+        if (sample.isFlagged) {
+            return (true, abi.encode(sample.lastId));
         }
 
-        if (data[1].length == 32) {
-            toAddress = abi.decode(data[1], (address));
-        } else {
-            return (false, abi.encode("Invalid `toAddress` data length"));
-        }
-        
-        if (data.length > 2 && data[2].length == 32) {
-             calldataLength = abi.decode(data[2], (uint256));
-        }
-        
-        bool isSelfCall = (fromAddress == toAddress && fromAddress != address(0));
-        bool hasCalldata = (calldataLength > 0);
-        
-        if (isSelfCall && hasCalldata) {
-            return (true, abi.encode("SELF_CALL_DETECTED", fromAddress));
-        }
-        
-        return (false, abi.encode("Safe"));
+        return (false, "");
     }
 }
